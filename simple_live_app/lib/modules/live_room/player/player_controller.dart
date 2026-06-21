@@ -276,7 +276,7 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
     fullScreenState.value = true;
     if (Platform.isAndroid || Platform.isIOS) {
       //全屏
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky,);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
       if (!isVertical.value) {
         //横屏
         setLandscapeOrientation();
