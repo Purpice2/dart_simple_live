@@ -28,52 +28,116 @@ import 'package:simple_live_core/simple_live_core.dart';
 class LiveRoomPage extends GetView<LiveRoomController> {
   const LiveRoomPage({Key? key}) : super(key: key);
 
-  @override
-  Widget build(BuildContext context) {
-    return Obx(() {
-      final full = controller.fullScreenState.value;
-
-      return Scaffold(
-        extendBody: true,
-        appBar: full
-            ? null
-            : AppBar(
-                title: Obx(
-                  () => Text(controller.detail.value?.title ?? "直播间"),
-                ),
-                actions: buildAppbarActions(context),
-              ),
-        body: SafeArea(
-          top: false,
-          bottom: !full,
-          child: Stack(
-            children: [
-              _buildPlayer(),
-
-              if (!full) _buildNormalUI(),
-            ],
-          ),
-        ),
-      );
-    });
+  /// ✅ 统一安全区底部 inset
+  double _bottomInset(BuildContext context) {
+    return MediaQuery.of(context).padding.bottom;
   }
 
-  /// 🎬 播放器层
-  Widget _buildPlayer() {
-    return Center(
-      child: buildMediaPlayer(),
+  @override
+  Widget build(BuildContext context) {
+    final page = Obx(() {
+      if (controller.loadError.value) {
+        return Scaffold(
+          appBar: AppBar(title: const Text("直播间加载失败")),
+          body: const Center(child: Text("加载失败")),
+        );
+      }
+
+      // ✅ 全屏模式
+      if (controller.fullScreenState.value) {
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (e, r) {
+            controller.exitFull();
+          },
+          child: Scaffold(
+            body: SafeArea(
+              top: false,
+              bottom: true,
+              child: buildMediaPlayer(),
+            ),
+          ),
+        );
+      }
+
+      return buildPageUI(context);
+    });
+
+    if (!Platform.isAndroid) return page;
+
+    return PiPSwitcher(
+      floating: controller.pip,
+      childWhenDisabled: page,
+      childWhenEnabled: buildMediaPlayer(),
     );
   }
 
-  /// 📱 正常 UI
-  Widget _buildNormalUI() {
+  Widget buildPageUI(BuildContext context) {
+    return OrientationBuilder(
+      builder: (context, orientation) {
+        return Scaffold(
+          appBar: AppBar(
+            title: Obx(() => Text(controller.detail.value?.title ?? "直播间")),
+            actions: buildAppbarActions(context),
+          ),
+          body: orientation == Orientation.portrait
+              ? buildPhoneUI(context)
+              : buildTabletUI(context),
+        );
+      },
+    );
+  }
+
+  Widget buildPhoneUI(BuildContext context) {
     return Column(
       children: [
-        buildUserProfile(Get.context!),
-        Expanded(child: buildMessageArea()),
-        SafeArea(
-          top: false,
-          child: buildBottomActions(Get.context!),
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: buildMediaPlayer(),
+        ),
+        buildUserProfile(context),
+        buildMessageArea(),
+        buildBottomActions(context),
+      ],
+    );
+  }
+
+  Widget buildTabletUI(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(child: buildMediaPlayer()),
+              SizedBox(width: 300, child: buildMessageArea()),
+            ],
+          ),
+        ),
+
+        // ✅ 修复 bottom inset
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            border: Border(
+              top: BorderSide(color: Colors.grey.withAlpha(25)),
+            ),
+          ),
+          padding: AppStyle.edgeInsetsV4.copyWith(
+            bottom: _bottomInset(context) + 4,
+          ),
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: controller.refreshRoom,
+                child: const Text("刷新"),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: controller.share,
+                child: const Text("分享"),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -81,47 +145,94 @@ class LiveRoomPage extends GetView<LiveRoomController> {
 
   Widget buildBottomActions(BuildContext context) {
     return Container(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom,
-      ),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        border: Border(
-          top: BorderSide(color: Colors.grey.withAlpha(25)),
-        ),
+        border: Border(top: BorderSide(color: Colors.grey.withAlpha(25))),
       ),
+
+      // ✅ 修复点：动态 safe area
+      padding: EdgeInsets.only(
+        bottom: _bottomInset(context),
+      ),
+
       child: Row(
         children: [
-          Expanded(child: TextButton(onPressed: controller.followUser, child: Text("关注"))),
-          Expanded(child: TextButton(onPressed: controller.refreshRoom, child: Text("刷新"))),
-          Expanded(child: TextButton(onPressed: controller.share, child: Text("分享"))),
+          Expanded(
+            child: Obx(() => TextButton.icon(
+                  onPressed: controller.followed.value
+                      ? controller.removeFollowUser
+                      : controller.followUser,
+                  icon: Icon(controller.followed.value
+                      ? Remix.heart_fill
+                      : Remix.heart_line),
+                  label: Text(
+                      controller.followed.value ? "取消关注" : "关注"),
+                )),
+          ),
+          Expanded(
+            child: TextButton.icon(
+              onPressed: controller.refreshRoom,
+              icon: const Icon(Remix.refresh_line),
+              label: const Text("刷新"),
+            ),
+          ),
+          Expanded(
+            child: TextButton.icon(
+              onPressed: controller.share,
+              icon: const Icon(Remix.share_line),
+              label: const Text("分享"),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  List<Widget> buildAppbarActions(BuildContext context) => [
-        IconButton(
-          icon: const Icon(Icons.more_horiz),
-          onPressed: () {},
-        )
-      ];
+  Widget buildMediaPlayer() {
+    return Stack(
+      children: [
+        Video(
+          key: controller.globalPlayerKey,
+          controller: controller.videoController,
+          controls: (state) => playerControls(state, controller),
+          wakelock: false,
+        ),
+        Obx(() => Visibility(
+              visible: !controller.liveStatus.value,
+              child: const Center(child: Text("未开播")),
+            )),
+      ],
+    );
+  }
 
-  Widget buildMediaPlayer() => Stack(
-        children: [
-          Video(
-            controller: controller.videoController,
-            controls: (state) => playerControls(state, controller),
-            wakelock: false,
-          ),
-          Obx(() => Visibility(
-                visible: !controller.liveStatus.value,
-                child: const Center(child: Text("未开播")),
-              )),
-        ],
-      );
+  Widget buildUserProfile(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      child: Obx(() => Row(
+            children: [
+              NetImage(controller.detail.value?.userAvatar ?? "",
+                  width: 40, height: 40),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(controller.detail.value?.userName ?? ""),
+              ),
+            ],
+          )),
+    );
+  }
 
-  Widget buildUserProfile(BuildContext context) => const SizedBox();
+  Widget buildMessageArea() {
+    return Expanded(
+      child: const Center(child: Text("聊天区域")),
+    );
+  }
 
-  Widget buildMessageArea() => const SizedBox();
+  List<Widget> buildAppbarActions(BuildContext context) {
+    return [
+      IconButton(
+        onPressed: controller.refreshRoom,
+        icon: const Icon(Icons.refresh),
+      ),
+    ];
+  }
 }
