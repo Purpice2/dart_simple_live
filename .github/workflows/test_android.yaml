@@ -1,4 +1,4 @@
-name: app-build-android
+name: app-build-android-test
 
 on:
   workflow_dispatch:
