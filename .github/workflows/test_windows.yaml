@@ -1,4 +1,4 @@
-name: app-build-android-windows-test
+name: app-build-windows-test
 
 on:
   workflow_dispatch:
