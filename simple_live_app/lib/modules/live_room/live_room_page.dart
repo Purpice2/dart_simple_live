@@ -33,7 +33,7 @@ class LiveRoomPage extends GetView<LiveRoomController> {
     return Obx(() {
       final full = controller.fullScreenState.value;
 
-      Widget page = Scaffold(
+      return Scaffold(
         extendBody: true,
         appBar: full
             ? null
@@ -48,78 +48,32 @@ class LiveRoomPage extends GetView<LiveRoomController> {
           bottom: !full,
           child: Stack(
             children: [
-              buildMediaPlayer(),
+              _buildPlayer(),
 
-              if (!full)
-                Column(
-                  children: [
-                    buildUserProfile(context),
-                    Expanded(child: buildMessageArea()),
-
-                    /// ✅ 修复点：Android bottom inset
-                    SafeArea(
-                      top: false,
-                      child: buildBottomActions(context),
-                    ),
-                  ],
-                ),
+              if (!full) _buildNormalUI(),
             ],
           ),
         ),
       );
-
-      if (!Platform.isAndroid) return page;
-
-      return PiPSwitcher(
-        floating: controller.pip,
-        childWhenDisabled: page,
-        childWhenEnabled: buildMediaPlayer(),
-      );
     });
   }
 
-  Widget buildMediaPlayer() {
-    var boxFit = BoxFit.contain;
-    double? aspectRatio;
+  /// 🎬 播放器层
+  Widget _buildPlayer() {
+    return Center(
+      child: buildMediaPlayer(),
+    );
+  }
 
-    if (AppSettingsController.instance.scaleMode.value == 0) {
-      boxFit = BoxFit.contain;
-    } else if (AppSettingsController.instance.scaleMode.value == 1) {
-      boxFit = BoxFit.fill;
-    } else if (AppSettingsController.instance.scaleMode.value == 2) {
-      boxFit = BoxFit.cover;
-    } else if (AppSettingsController.instance.scaleMode.value == 3) {
-      boxFit = BoxFit.contain;
-      aspectRatio = 16 / 9;
-    } else if (AppSettingsController.instance.scaleMode.value == 4) {
-      boxFit = BoxFit.contain;
-      aspectRatio = 4 / 3;
-    }
-
-    return Stack(
+  /// 📱 正常 UI
+  Widget _buildNormalUI() {
+    return Column(
       children: [
-        Video(
-          key: controller.globalPlayerKey,
-          controller: controller.videoController,
-          pauseUponEnteringBackgroundMode:
-              AppSettingsController.instance.playerAutoPause.value,
-          resumeUponEnteringForegroundMode:
-              AppSettingsController.instance.playerAutoPause.value,
-          controls: (state) {
-            return playerControls(state, controller);
-          },
-          aspectRatio: aspectRatio,
-          fit: boxFit,
-          wakelock: false,
-        ),
-        Obx(
-          () => Visibility(
-            visible: !controller.liveStatus.value,
-            child: const Center(
-              child: Text("未开播",
-                  style: TextStyle(fontSize: 16, color: Colors.white)),
-            ),
-          ),
+        buildUserProfile(Get.context!),
+        Expanded(child: buildMessageArea()),
+        SafeArea(
+          top: false,
+          child: buildBottomActions(Get.context!),
         ),
       ],
     );
@@ -127,71 +81,24 @@ class LiveRoomPage extends GetView<LiveRoomController> {
 
   Widget buildBottomActions(BuildContext context) {
     return Container(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).padding.bottom,
+      ),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         border: Border(
           top: BorderSide(color: Colors.grey.withAlpha(25)),
         ),
       ),
-
-      /// 🔥 修复点：用系统 inset，不用写死高度
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom,
-      ),
-
       child: Row(
         children: [
-          Expanded(
-            child: Obx(
-              () => controller.followed.value
-                  ? TextButton.icon(
-                      onPressed: controller.removeFollowUser,
-                      icon: const Icon(Remix.heart_fill),
-                      label: const Text("取消关注"),
-                    )
-                  : TextButton.icon(
-                      onPressed: controller.followUser,
-                      icon: const Icon(Remix.heart_line),
-                      label: const Text("关注"),
-                    ),
-            ),
-          ),
-          Expanded(
-            child: TextButton.icon(
-              onPressed: controller.refreshRoom,
-              icon: const Icon(Remix.refresh_line),
-              label: const Text("刷新"),
-            ),
-          ),
-          Expanded(
-            child: TextButton.icon(
-              onPressed: controller.share,
-              icon: const Icon(Remix.share_line),
-              label: const Text("分享"),
-            ),
-          ),
+          Expanded(child: TextButton(onPressed: controller.followUser, child: Text("关注"))),
+          Expanded(child: TextButton(onPressed: controller.refreshRoom, child: Text("刷新"))),
+          Expanded(child: TextButton(onPressed: controller.share, child: Text("分享"))),
         ],
       ),
     );
   }
-
-  Widget buildUserProfile(BuildContext context) => Container(
-        padding: AppStyle.edgeInsetsA8,
-        child: Obx(
-          () => Row(
-            children: [
-              NetImage(controller.detail.value?.userAvatar ?? "",
-                  width: 48, height: 48, borderRadius: 24),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(controller.detail.value?.userName ?? ""),
-              ),
-            ],
-          ),
-        ),
-      );
-
-  Widget buildMessageArea() => const SizedBox();
 
   List<Widget> buildAppbarActions(BuildContext context) => [
         IconButton(
@@ -199,4 +106,22 @@ class LiveRoomPage extends GetView<LiveRoomController> {
           onPressed: () {},
         )
       ];
+
+  Widget buildMediaPlayer() => Stack(
+        children: [
+          Video(
+            controller: controller.videoController,
+            controls: (state) => playerControls(state, controller),
+            wakelock: false,
+          ),
+          Obx(() => Visibility(
+                visible: !controller.liveStatus.value,
+                child: const Center(child: Text("未开播")),
+              )),
+        ],
+      );
+
+  Widget buildUserProfile(BuildContext context) => const SizedBox();
+
+  Widget buildMessageArea() => const SizedBox();
 }
