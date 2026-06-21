@@ -1,0 +1,54 @@
+name: app-build-android-windows-test
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "dev_v*"
+
+jobs:
+  # 打包Windows（修复协程编译报错版本）
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      # 签出代码
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      # 设置Flutter环境
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.x"
+          cache: true
+      - name: Enable Flutter Desktop
+        run: flutter config --enable-windows-desktop
+      - name: Restore Packages
+        run: |
+          cd simple_live_app
+          flutter pub get
+      # 设置flutter_distributor环境
+      - name: Install flutter_distributor
+        run: dart pub global activate flutter_distributor
+      # 把dart全局工具加入PATH，确保命令能调用
+      - name: Add Dart Pub Cache to PATH
+        run: echo "$env:LOCALAPPDATA\Pub\Cache\bin" | Out-File -Append $env:GITHUB_PATH
+      # build Windows ZIP\MSIX 关键修复：全局注入编译器宏屏蔽协程报错
+      - name: Build Windows
+        run: |
+          cd simple_live_app
+          # MSVC全局编译参数，所有插件C++编译都会生效
+          $env:CL = "-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
+          flutter_distributor package --platform windows --targets msix,zip --skip-clean
+      # 上传Windows至Artifacts，改用**递归匹配
+      - name: Upload Windows APP to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            simple_live_app/build/dist/**/*.msix
+            simple_live_app/build/dist/**/*.zip
+        #完成
+      - run: echo "🍏 Windows job's status is ${{ job.status }}."
